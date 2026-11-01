@@ -5,10 +5,15 @@ const { createProxyMiddleware } = require('http-proxy-middleware');
 const app = express();
 
 const PORT = parseInt(process.env.PORT, 10) || 3000;
-const TARGET_URL = (process.env.TARGET_URL).replace(/\/+$/, '');
 const PROXY_API_KEY = (process.env.PROXY_API_KEY || '').trim();
 const UPSTREAM_API_KEY = (process.env.UPSTREAM_API_KEY || '').trim();
 const HIDE_CLIENT_IP = process.env.HIDE_CLIENT_IP !== 'false';
+
+if (!process.env.TARGET_URL) {
+  console.error('Missing required env var: TARGET_URL');
+  process.exit(1);
+}
+const TARGET_URL = process.env.TARGET_URL.replace(/\/+$/, '');
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
