@@ -1,0 +1,16 @@
+{
+  "name": "vps-llm-shield",
+  "version": "1.0.0",
+  "description": "OpenAI-compatible reverse proxy for a private LLM backend",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "dotenv": "^18.0.9",
+    "express": "^5.3.0",
+    "http-proxy-middleware": "^4.2.1"
+  }
+}

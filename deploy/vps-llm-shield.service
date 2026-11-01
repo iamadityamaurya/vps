@@ -1,0 +1,22 @@
+[Unit]
+Description=VPS LLM Shield - OpenAI-compatible reverse proxy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/vps-llm-shield
+ExecStart=/usr/bin/node /opt/vps-llm-shield/server.js
+Restart=always
+RestartSec=3
+Environment=NODE_ENV=production
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target
