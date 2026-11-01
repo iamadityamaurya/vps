@@ -87,5 +87,8 @@ const server = app.listen(PORT, '0.0.0.0', () => {
 });
 
 for (const signal of ['SIGTERM', 'SIGINT']) {
-  process.on(signal, () => server.close(() => process.exit(0)));
+  process.on(signal, () => {
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 5000).unref();
+  });
 }
