@@ -5,7 +5,7 @@ const { createProxyMiddleware } = require('http-proxy-middleware');
 const app = express();
 
 const PORT = parseInt(process.env.PORT, 10) || 3000;
-const TARGET_URL = (process.env.TARGET_URL || 'http://103.68.69.21:8000').replace(/\/+$/, '');
+const TARGET_URL = (process.env.TARGET_URL).replace(/\/+$/, '');
 const PROXY_API_KEY = (process.env.PROXY_API_KEY || '').trim();
 const UPSTREAM_API_KEY = (process.env.UPSTREAM_API_KEY || '').trim();
 const HIDE_CLIENT_IP = process.env.HIDE_CLIENT_IP !== 'false';
