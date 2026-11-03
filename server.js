@@ -1,31 +1,60 @@
 require('dotenv').config();
 const express = require('express');
-const { createProxyMiddleware } = require('http-proxy-middleware');
 
 const app = express();
 
 const PORT = parseInt(process.env.PORT, 10) || 3000;
 const PROXY_API_KEY = (process.env.PROXY_API_KEY || '').trim();
-const UPSTREAM_API_KEY = (process.env.UPSTREAM_API_KEY || '').trim();
 const HIDE_CLIENT_IP = process.env.HIDE_CLIENT_IP !== 'false';
 
 if (!process.env.TARGET_URL) {
   console.error('Missing required env var: TARGET_URL');
   process.exit(1);
 }
-const TARGET_URL = process.env.TARGET_URL.replace(/\/+$/, '');
+
+if (!PROXY_API_KEY || PROXY_API_KEY.length < 16) {
+  console.error('Missing or weak PROXY_API_KEY (min 16 chars) - refusing to start without authentication');
+  process.exit(1);
+}
+
+const providers = [
+  {
+    name: 'default',
+    url: process.env.TARGET_URL.replace(/\/+$/, ''),
+    apiKey: (process.env.UPSTREAM_API_KEY || '').trim()
+  },
+  ...(process.env.DEEPSEEK_TARGET_URL ? [{
+    name: 'deepseek',
+    url: process.env.DEEPSEEK_TARGET_URL.replace(/\/+$/, ''),
+    apiKey: (process.env.DEEPSEEK_API_KEY || process.env.UPSTREAM_API_KEY || '').trim(),
+    match: model => /deepseek/i.test(model)
+  }] : [])
+];
+
+const route = model => providers.find(p => p.match?.(model)) || providers[0];
+
+const readBody = req => new Promise((resolve, reject) => {
+  const chunks = [];
+  req.on('data', c => chunks.push(c));
+  req.on('end', () => resolve(Buffer.concat(chunks)));
+  req.on('error', reject);
+});
+
+const upstreamPath = url => url.startsWith('/v1') ? url : `/v1${url}`;
+
+const forwardHeaders = provider => ({
+  ...(provider.apiKey ? { authorization: `Bearer ${provider.apiKey}` } : {})
+});
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 const authenticate = (req, res, next) => {
-  if (!PROXY_API_KEY) return next();
-
   const header = req.headers.authorization;
   const token =
     header?.startsWith('Bearer ') ? header.slice(7).trim() :
-    req.headers['x-api-key'] ? String(req.headers['x-api-key']).trim() : '';
+      req.headers['x-api-key'] ? String(req.headers['x-api-key']).trim() : '';
 
   if (token === PROXY_API_KEY) return next();
 
@@ -39,51 +68,82 @@ const authenticate = (req, res, next) => {
   });
 };
 
-const proxy = createProxyMiddleware({
-  target: TARGET_URL,
-  changeOrigin: true,
-  xfwd: !HIDE_CLIENT_IP,
-  pathRewrite: (path, req) => {
-    const [pathname, query] = (req.originalUrl || path).split('?');
-    const target = pathname.startsWith('/v1') ? pathname : `/v1${pathname}`;
-    return query ? `${target}?${query}` : target;
-  },
-  on: {
-    proxyReq: proxyReq => {
-      if (HIDE_CLIENT_IP) {
-        for (const header of ['x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'x-real-ip', 'via', 'forwarded']) {
-          proxyReq.removeHeader(header);
-        }
-      }
-      if (UPSTREAM_API_KEY) {
-        proxyReq.setHeader('authorization', `Bearer ${UPSTREAM_API_KEY}`);
-      }
-    },
-    proxyRes: (proxyRes, req, res) => {
-      if (/\/(chat\/)?completions/.test(req.originalUrl)) {
-        res.setHeader('X-Accel-Buffering', 'no');
-        res.setHeader('Cache-Control', 'no-cache');
-      }
-      res.removeHeader('server');
-      res.removeHeader('x-powered-by');
-    },
-    error: (err, req, res) => {
-      if (res.headersSent) return;
-      res.status(502).json({
-        error: {
-          message: 'Upstream unavailable.',
-          type: 'server_error',
-          code: 502
-        }
-      });
+app.use(authenticate);
+
+app.get('/v1/models', async (req, res) => {
+  const results = await Promise.allSettled(
+    providers.map(p =>
+      fetch(`${p.url}/v1/models`, { headers: forwardHeaders(p), signal: AbortSignal.timeout(15000) })
+        .then(r => r.json())
+    )
+  );
+
+  const models = results.flatMap(r =>
+    r.status === 'fulfilled' && Array.isArray(r.value?.data) ? r.value.data : []
+  );
+  https://api.adityamaurya.dev:6686/v1/health
+  if (!models.length) {
+    return res.status(502).json({ error: { message: 'No upstream available.', type: 'server_error', code: 502 } });
+  }
+  res.json({ object: 'list', data: models });
+});
+
+app.all(/^\/(v1|models|chat|embeddings|completions)/, async (req, res) => {
+  try {
+    const body = ['POST', 'PUT', 'PATCH'].includes(req.method) ? await readBody(req) : undefined;
+
+    let model = '';
+    if (body) {
+      try { model = JSON.parse(body).model || ''; } catch { }
     }
+
+    const provider = route(model);
+    const target = `${provider.url}${upstreamPath(req.originalUrl.split('?')[0])}${req.originalUrl.includes('?') ? '?' + req.originalUrl.split('?')[1] : ''}`;
+
+    const upstream = await fetch(target, {
+      method: req.method,
+      headers: {
+        ...forwardHeaders(provider),
+        accept: req.headers.accept || 'application/json',
+        ...(body ? {
+          'content-type': req.headers['content-type'] || 'application/json',
+          'content-length': body.length
+        } : {})
+      },
+      body,
+      signal: AbortSignal.timeout(3600000)
+    });
+
+    res.status(upstream.status);
+    for (const header of ['content-type', 'cache-control']) {
+      const value = upstream.headers.get(header);
+      if (value) res.setHeader(header, value);
+    }
+
+    if (upstream.headers.get('content-type')?.includes('text/event-stream')) {
+      res.setHeader('X-Accel-Buffering', 'no');
+      res.flushHeaders();
+      for await (const chunk of upstream.body) {
+        res.write(chunk);
+      }
+      res.end();
+    } else {
+      res.end(Buffer.from(await upstream.arrayBuffer()));
+    }
+  } catch (err) {
+    if (res.headersSent) return res.end();
+    res.status(502).json({
+      error: {
+        message: 'Upstream unavailable.',
+        type: 'server_error',
+        code: 502
+      }
+    });
   }
 });
 
-app.use(['/v1', '/models', '/chat', '/embeddings', '/completions'], authenticate, proxy);
-
 const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`vps-llm-shield listening on :${PORT} -> ${TARGET_URL}`);
+  console.log(`vps-llm-shield listening on :${PORT} (${providers.map(p => p.name).join(', ')})`);
 });
 
 for (const signal of ['SIGTERM', 'SIGINT']) {
