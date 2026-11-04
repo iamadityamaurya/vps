@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 
-const API_BASE = 'http://api.adityamaurya.dev:6686';
+const API_BASE = 'https://api.adityamaurya.dev';
 
 const MODEL = {
   id: 'deepseek-v4.1-flash',

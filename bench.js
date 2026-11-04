@@ -1,6 +1,6 @@
 require('dotenv').config();
 
-const BASE_URL = process.env.TEST_BASE_URL || 'http://api.adityamaurya.dev:6686';
+const BASE_URL = process.env.TEST_BASE_URL || 'https://api.adityamaurya.dev';
 const API_KEY = process.env.PROXY_API_KEY;
 const MODEL = process.argv[2] || 'deepseek-v4.1-flash';
 const LEVELS = [1, 2, 4, 8, 16, 32, 64, 128];

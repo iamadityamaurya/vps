@@ -84,7 +84,7 @@ app.get('/v1/models', async (req, res) => {
   const models = results.flatMap(r =>
     r.status === 'fulfilled' && Array.isArray(r.value?.data) ? r.value.data : []
   );
-  https://api.adityamaurya.dev:6686/v1/healanth
+
   if (!models.length) {
     return res.status(502).json({ error: { message: 'No upstream available.', type: 'server_error', code: 502 } });
   }
