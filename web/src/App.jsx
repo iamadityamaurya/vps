@@ -152,23 +152,12 @@ const Benchmarks = () => {
 };
 
 const App = () => {
-  const [online, setOnline] = useState(null);
-
-  useEffect(() => {
-    fetch('/health')
-      .then(r => r.json())
-      .then(() => setOnline(true))
-      .catch(() => setOnline(false));
-  }, []);
-
   return (
     <div className="page">
       <header>
         <h1>LLM API <span className="badge">OpenAI-compatible</span></h1>
         <p className="sub">
           {API_BASE}/v1
-          <span className={`dot ${online === null ? '' : online ? 'up' : 'down'}`} title={online ? 'online' : 'offline'} />
-          <span className="status-text">{online === null ? 'checking…' : online ? 'online' : 'offline'}</span>
         </p>
       </header>
 
