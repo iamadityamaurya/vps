@@ -1,5 +1,6 @@
 require('dotenv').config();
 const express = require('express');
+const path = require('path');
 
 const app = express();
 
@@ -50,6 +51,8 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+app.use(express.static(path.join(__dirname, 'web-dist')));
+
 const authenticate = (req, res, next) => {
   const header = req.headers.authorization;
   const token =
@@ -81,7 +84,7 @@ app.get('/v1/models', async (req, res) => {
   const models = results.flatMap(r =>
     r.status === 'fulfilled' && Array.isArray(r.value?.data) ? r.value.data : []
   );
-  https://api.adityamaurya.dev:6686/v1/health
+  https://api.adityamaurya.dev:6686/v1/healanth
   if (!models.length) {
     return res.status(502).json({ error: { message: 'No upstream available.', type: 'server_error', code: 502 } });
   }
